@@ -1,12 +1,11 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { Session } from '@supabase/supabase-js';
+import { useToast } from '@/hooks/use-toast';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  session: Session | null;
-  login: (email: string, password: string) => Promise<{ error: Error | null }>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -14,21 +13,19 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
-    // Check active sessions and set the initial auth state
+    // Verifica se já existe uma sessão ativa
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
       setIsAuthenticated(!!session);
     });
 
-    // Listen for auth changes
+    // Escuta mudanças na autenticação
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
       setIsAuthenticated(!!session);
     });
 
@@ -36,25 +33,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (!error) {
+      if (error) {
+        throw error;
+      }
+
       navigate('/');
+    } catch (error: any) {
+      toast({
+        title: "Erro ao fazer login",
+        description: error.message || "Ocorreu um erro ao tentar fazer login",
+        variant: "destructive",
+      });
+      throw error;
     }
-
-    return { error };
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    navigate('/auth');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw error;
+      }
+      navigate('/auth');
+    } catch (error: any) {
+      toast({
+        title: "Erro ao fazer logout",
+        description: error.message || "Ocorreu um erro ao tentar fazer logout",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, session, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
